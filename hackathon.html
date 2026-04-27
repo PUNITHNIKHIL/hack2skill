@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI Supply Chain System</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { margin:0; font-family:'Segoe UI'; background:#0f172a; color:white;}
+header { padding:15px; text-align:center; background:#020617; color:#38bdf8; font-size:22px;}
+.container { display:grid; grid-template-columns: repeat(3,1fr); gap:12px; padding:12px;}
+.card { background:#1e293b; padding:12px; border-radius:10px;}
+button { padding:6px 10px; margin:4px; background:#38bdf8; border:none; border-radius:5px; cursor:pointer;}
+input[type=range]{width:100%;}
+.alert{color:#f87171;} .success{color:#4ade80;}
+.log{height:120px; overflow:auto; background:black; padding:5px; font-size:11px;}
+</style>
+</head>
+
+<body>
+
+<header>🚚 Interactive AI Supply Chain System</header>
+
+<div class="container">
+
+<!-- DEMAND CONTROL -->
+<div class="card">
+<h3>🎛 Demand Control</h3>
+A <input type="range" min="50" max="200" value="120" onchange="setDemand('A',this.value)">
+B <input type="range" min="50" max="200" value="80" onchange="setDemand('B',this.value)">
+C <input type="range" min="50" max="200" value="60" onchange="setDemand('C',this.value)">
+<canvas id="chart"></canvas>
+</div>
+
+<!-- WAREHOUSE CONTROL -->
+<div class="card">
+<h3>🏭 Warehouse Control</h3>
+<div id="whControls"></div>
+</div>
+
+<!-- KPI -->
+<div class="card">
+<h3>📊 KPIs</h3>
+<div id="kpi"></div>
+</div>
+
+<!-- ALLOCATION -->
+<div class="card">
+<h3>📍 Allocation</h3>
+<div id="allocation"></div>
+</div>
+
+<!-- ROUTE -->
+<div class="card">
+<h3>🚚 Routing</h3>
+<div id="route"></div>
+</div>
+
+<!-- COST -->
+<div class="card">
+<h3>💰 Cost Breakdown</h3>
+<div id="cost"></div>
+</div>
+
+<!-- DECISION -->
+<div class="card">
+<h3>🧠 AI Decisions</h3>
+<div id="decision"></div>
+</div>
+
+<!-- SIMULATION -->
+<div class="card">
+<h3>⚠️ Simulation</h3>
+<button onclick="blockRoute()">Block Route</button>
+<button onclick="fuelIncrease()">Fuel ↑</button>
+<button onclick="toggleAuto()">Auto Mode</button>
+</div>
+
+<!-- LOG -->
+<div class="card" style="grid-column: span 3;">
+<h3>🧾 Logs</h3>
+<div id="logs" class="log"></div>
+</div>
+
+</div>
+
+<script>
+
+// DATA
+let demand={A:120,B:80,C:60};
+let warehouses=[
+ {name:"W1",stock:150,active:true},
+ {name:"W2",stock:100,active:true},
+ {name:"W3",stock:90,active:true}
+];
+
+let graph={W1:{Store:5},W2:{Store:3},W3:{Store:6},Store:{}};
+
+let pricing={fuel:5,labor:10,storage:2};
+let fuelMul=1;
+let auto=false;
+
+// CHART
+let ctx=document.getElementById('chart').getContext('2d');
+let chart=new Chart(ctx,{
+ type:'bar',
+ data:{labels:Object.keys(demand),
+ datasets:[{label:'Demand',data:Object.values(demand)}]}
+});
+
+// LOG
+function log(msg){
+ let el=document.getElementById("logs");
+ el.innerHTML+=msg+"<br>";
+ el.scrollTop=el.scrollHeight;
+}
+
+// DEMAND
+function setDemand(zone,val){
+ demand[zone]=parseInt(val);
+ chart.data.datasets[0].data=Object.values(demand);
+ chart.update();
+ run();
+}
+
+// WAREHOUSE CONTROL
+function updateWHControls(){
+ let html="";
+ warehouses.forEach((w,i)=>{
+  html+=`${w.name}
+  <button onclick="toggleWH(${i})">${w.active?'ON':'OFF'}</button><br>`;
+ });
+ document.getElementById("whControls").innerHTML=html;
+}
+
+function toggleWH(i){
+ warehouses[i].active=!warehouses[i].active;
+ log(warehouses[i].name+" toggled");
+ run();
+}
+
+// ALLOCATION
+function allocate(){
+ let html="";
+ for(let z in demand){
+  let best=warehouses.find(w=>w.active && w.stock>50);
+  if(best){
+   html+=`${z} ← ${best.name}<br>`;
+  }else{
+   html+=`<span class="alert">${z} NOT SERVED</span><br>`;
+  }
+ }
+ document.getElementById("allocation").innerHTML=html;
+}
+
+// ROUTE
+function bestRoute(){
+ let best=null,min=Infinity;
+ for(let w in graph){
+  if(w!=="Store"){
+   if(graph[w].Store<min){
+    min=graph[w].Store;
+    best=w;
+   }
+  }
+ }
+ return {path:best,cost:min};
+}
+
+// COST
+function cost(){
+ let route=bestRoute();
+ let total=Object.values(demand).reduce((a,b)=>a+b,0);
+
+ let fuel=route.cost*pricing.fuel*fuelMul;
+ let labor=total*pricing.labor;
+ let storage=warehouses.reduce((s,w)=>s+w.stock,0)*pricing.storage;
+
+ document.getElementById("cost").innerHTML=
+ `Fuel: ₹${fuel}<br>Labor: ₹${labor}<br>Storage: ₹${storage}`;
+}
+
+// KPI
+function updateKPI(){
+ let total=Object.values(demand).reduce((a,b)=>a+b,0);
+ document.getElementById("kpi").innerText="Demand: "+total;
+}
+
+// DECISION ENGINE
+function decision(){
+ let text="";
+ if(Object.values(demand).reduce((a,b)=>a+b,0)>300)
+  text+="High Demand → Increase supply<br>";
+ if(warehouses.some(w=>!w.active))
+  text+="Warehouse failure → Redistribute<br>";
+
+ document.getElementById("decision").innerHTML=text;
+}
+
+// SIMULATION
+function blockRoute(){
+ graph.W2.Store=10;
+ log("Route blocked");
+ run();
+}
+
+function fuelIncrease(){
+ fuelMul+=0.5;
+ log("Fuel increased");
+ run();
+}
+
+function toggleAuto(){
+ auto=!auto;
+ log("Auto mode "+(auto?"ON":"OFF"));
+}
+
+// AUTO LOOP
+setInterval(()=>{
+ if(auto){
+  demand.A+=5;
+  run();
+ }
+},2000);
+
+// RUN
+function run(){
+ updateWHControls();
+ allocate();
+ let r=bestRoute();
+ document.getElementById("route").innerText=r.path+" → Store ("+r.cost+")";
+ cost();
+ updateKPI();
+ decision();
+}
+
+run();
+
+</script>
+
+</body>
+</html>
